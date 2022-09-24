@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  agmcapi:
+    build: .
+    image: jiran03/agmc-task:v1
+    container_name: agmc-1.0.0
+    ports:
+      - 8080:8080
+    depends_on:
+      db:
+        condition: service_started
+    # environment:
+    #   DB: postgre
+    #   DB_NAME: agmcdb
+    #   DB_HOST: db
+    #   DB_USER: pg
+    #   DB_PASS: mysecretpw
+    #   DB_PORT: 5432
+    #env_file:
+    #  - ./.env
+    networks:
+      - agmcnet
+    restart: always
+
+  db:
+    container_name: agmcdb
+    image: postgres
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=pg
+      - POSTGRES_PASSWORD=mysecretpw
+      - POSTGRES_DB=agmcdb
+    ports:
+      - 5432:5432
+    networks:
+      - agmcnet
+    restart: always
+
+volumes:
+  db_data:
+
+networks:
+  agmcnet:
+    driver: bridge
+    name: agmcnet

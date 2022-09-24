@@ -1,0 +1,76 @@
+name: push-to-EC2
+
+on:
+  push:
+    branches:
+      - "main"
+
+jobs:
+  build-container:
+    name: Build Docker Container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: setup GO
+        uses: actions/setup-go@v3
+        with:
+          go-version: '>=1.18.0'
+
+      - name: create env file
+        env: 
+          DB: ${{secrets.DB}}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }} 
+          JWT_EXPIRED: ${{ secrets.JWT_EXPIRED }} 
+        run: |
+          touch .env
+          echo DB=$DB >> .env
+          echo DB_USER=$DB_USER >> .env
+          echo DB_PASS=$DB_PASS >> .env
+          echo DB_HOST=$DB_HOST >> .env
+          echo DB_PORT=$DB_PORT >> .env
+          echo DB_NAME=$DB_NAME >> .env
+          echo JWT_SECRET=$JWT_SECRET >> .env
+          echo JWT_EXPIRED=$JWT_EXPIRED >> .env
+
+      - name: login to docker hub
+        uses: docker/login-action@v1
+        with: 
+          username: ${{secrets.DOCKERHUB_USERNAME}}
+          password: ${{secrets.DOCKERHUB_PASSWORD}} #pakai akses token
+
+      - name: build docker container
+        run: docker build -t jiran03/agmc-task:v1 .
+
+      - name: push docker container
+        run: docker image push jiran03/agmc-task:v1
+
+
+  deployment:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build-container
+    steps:
+      - name: checkout the files
+        uses: actions/checkout@v3
+
+      - name: deploy to server
+        env: 
+          SSH_PRIVATE_KEY: ${{secrets.EC2_SSH_KEY}}
+          REMOTE_USER: ${{secrets.EC2_USER}}
+          REMOTE_HOST: ${{secrets.EC2_HOST}}
+        run: |
+          echo "$SSH_PRIVATE_KEY" > private_key && chmod 400 private_key
+          ssh -o StrictHostKeyChecking=no -tt -i private_key ${REMOTE_USER}@${REMOTE_HOST} '
+            sudo chmod 777 /var/run/docker.sock
+            sudo docker pull jiran03/agmc-task:v1 &&
+            sudo docker container stop agmc-container || true &&
+            sudo docker container rm agmc-container || true &&
+            sudo docker container create --name agmc-container -p 0.0.0.0:80:8080/tcp jiran03/agmc-task:v1 &&
+            sudo docker container start agmc-container
+          '
